@@ -209,8 +209,7 @@ impl From<KeyRange> for PbKeyRange {
 }
 
 /// Command to run consensus protocol
-#[cfg_attr(test, derive(PartialEq))]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Command {
     /// Request data
     request: RequestWrapper,
@@ -223,7 +222,7 @@ pub struct Command {
 }
 
 /// get all lease ids in the request wrapper
-fn get_lease_ids(wrapper: &RequestWrapper) -> HashSet<i64> {
+pub fn get_lease_ids(wrapper: &RequestWrapper) -> HashSet<i64> {
     match *wrapper {
         RequestWrapper::LeaseGrantRequest(ref req) => HashSet::from_iter(vec![req.id]),
         RequestWrapper::LeaseRevokeRequest(ref req) => HashSet::from_iter(vec![req.id]),
@@ -540,6 +539,11 @@ impl CurpCommand for Command {
     #[inline]
     fn keys(&self) -> &[Self::K] {
         self.keys.as_slice()
+    }
+
+    #[inline]
+    fn is_read_only(&self) -> bool {
+        self.request().is_read_only()
     }
 }
 

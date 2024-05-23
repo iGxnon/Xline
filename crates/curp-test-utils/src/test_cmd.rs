@@ -191,6 +191,13 @@ impl Command for TestCommand {
     fn keys(&self) -> &[Self::K] {
         &self.keys
     }
+
+    fn is_read_only(&self) -> bool {
+        match self.cmd_type {
+            TestCommandType::Get => true,
+            TestCommandType::Put(_) => false,
+        }
+    }
 }
 
 impl ConflictCheck for TestCommand {
@@ -265,7 +272,7 @@ impl CommandExecutor<TestCommand> for TestCE {
         let keys = cmd
             .keys
             .iter()
-            .map(|k| k.to_be_bytes().to_vec())
+            .map(|k| k.to_le_bytes().to_vec())
             .collect_vec();
         let result: TestCommandResult = match cmd.cmd_type {
             TestCommandType::Get => {
@@ -275,7 +282,7 @@ impl CommandExecutor<TestCommand> for TestCE {
                     .map_err(|e| ExecuteError(e.to_string()))?
                     .into_iter()
                     .flatten()
-                    .map(|v| u32::from_be_bytes(v.as_slice().try_into().unwrap()))
+                    .map(|v| u32::from_le_bytes(v.as_slice().try_into().unwrap()))
                     .collect();
                 let revision = self
                     .store
@@ -283,7 +290,7 @@ impl CommandExecutor<TestCommand> for TestCE {
                     .map_err(|e| ExecuteError(e.to_string()))?
                     .into_iter()
                     .flatten()
-                    .map(|v| i64::from_be_bytes(v.as_slice().try_into().unwrap()))
+                    .map(|v| i64::from_le_bytes(v.as_slice().try_into().unwrap()))
                     .collect_vec();
                 TestCommandResult::new(value, revision)
             }
@@ -316,11 +323,11 @@ impl CommandExecutor<TestCommand> for TestCE {
         )];
         if let TestCommandType::Put(v) = cmd.cmd_type {
             debug!("cmd {:?}-{:?} revision is {}", cmd.cmd_type, cmd, revision);
-            let value = v.to_be_bytes().to_vec();
+            let value = v.to_le_bytes().to_vec();
             let keys = cmd
                 .keys
                 .iter()
-                .map(|k| k.to_be_bytes().to_vec())
+                .map(|k| k.to_le_bytes().to_vec())
                 .collect_vec();
             wr_ops.extend(
                 keys.clone()
@@ -330,7 +337,7 @@ impl CommandExecutor<TestCommand> for TestCE {
                         WriteOperation::new_put(
                             REVISION_TABLE,
                             key,
-                            revision.to_be_bytes().to_vec(),
+                            revision.to_le_bytes().to_vec(),
                         )
                     })),
             );
@@ -361,7 +368,8 @@ impl CommandExecutor<TestCommand> for TestCE {
         let Some(index) = self
             .store
             .get(META_TABLE, APPLIED_INDEX_KEY)
-            .map_err(|e| ExecuteError(e.to_string()))? else {
+            .map_err(|e| ExecuteError(e.to_string()))?
+        else {
             return Ok(0);
         };
         let index = LogIndex::from_le_bytes(index.as_slice().try_into().unwrap());
@@ -379,7 +387,10 @@ impl CommandExecutor<TestCommand> for TestCE {
         snapshot: Option<(Snapshot, LogIndex)>,
     ) -> Result<(), <TestCommand as Command>::Error> {
         let Some((mut snapshot, index)) = snapshot else {
-            let ops = vec![WriteOperation::new_delete_range(TEST_TABLE, &[], &[0xff]),WriteOperation::new_delete(META_TABLE, APPLIED_INDEX_KEY.as_ref())];
+            let ops = vec![
+                WriteOperation::new_delete_range(TEST_TABLE, &[], &[0xff]),
+                WriteOperation::new_delete(META_TABLE, APPLIED_INDEX_KEY.as_ref()),
+            ];
             self.store
                 .write_batch(ops, true)
                 .map_err(|e| ExecuteError(e.to_string()))?;

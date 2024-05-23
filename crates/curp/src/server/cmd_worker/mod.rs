@@ -17,7 +17,7 @@ use crate::{
     cmd::{Command, CommandExecutor},
     log_entry::{EntryData, LogEntry},
     role_change::RoleChange,
-    rpc::ConfChangeType,
+    rpc::{ConfChangeType, PoolEntry},
     server::cmd_worker::conflict_checked_mpmc::TaskType,
     snapshot::{Snapshot, SnapshotMeta},
 };
@@ -62,7 +62,8 @@ async fn cmd_worker<C: Command, CE: CommandExecutor<C>, RC: RoleChange>(
     ce: Arc<CE>,
     shutdown_listener: Listener,
 ) {
-    #[allow(clippy::arithmetic_side_effects)] // introduced by tokio select
+    #[allow(clippy::arithmetic_side_effects, clippy::ignored_unit_patterns)]
+    // introduced by tokio select
     loop {
         tokio::select! {
             task = dispatch_rx.recv() => {
@@ -119,8 +120,10 @@ async fn worker_exe<C: Command, CE: CommandExecutor<C>, RC: RoleChange>(
             let er_ok = er.is_ok();
             cb.write().insert_er(entry.propose_id, er);
             if !er_ok {
-                sp.lock().remove(&entry.propose_id);
-                let _ig = ucp.lock().remove(&entry.propose_id);
+                sp.lock()
+                    .remove(PoolEntry::new(entry.propose_id, Arc::clone(cmd)));
+                ucp.lock()
+                    .remove(PoolEntry::new(entry.propose_id, Arc::clone(cmd)));
             }
             debug!(
                 "{id} cmd({}) is speculatively executed, exe status: {er_ok}",
@@ -151,13 +154,15 @@ async fn worker_as<C: Command, CE: CommandExecutor<C>, RC: RoleChange>(
     let success = match entry.entry_data {
         EntryData::Command(ref cmd) => {
             let Some(prepare) = prepare else {
-            unreachable!("prepare should always be Some(_) when entry is a command");
-        };
+                unreachable!("prepare should always be Some(_) when entry is a command");
+            };
             let asr = ce.after_sync(cmd.as_ref(), entry.index, prepare).await;
             let asr_ok = asr.is_ok();
             cb.write().insert_asr(entry.propose_id, asr);
-            sp.lock().remove(&entry.propose_id);
-            let _ig = ucp.lock().remove(&entry.propose_id);
+            sp.lock()
+                .remove(PoolEntry::new(entry.propose_id, Arc::clone(cmd)));
+            ucp.lock()
+                .remove(PoolEntry::new(entry.propose_id, Arc::clone(cmd)));
             debug!("{id} cmd({}) after sync is called", entry.propose_id);
             asr_ok
         }
@@ -183,8 +188,10 @@ async fn worker_as<C: Command, CE: CommandExecutor<C>, RC: RoleChange>(
             let shutdown_self =
                 change.change_type() == ConfChangeType::Remove && change.node_id == id;
             cb.write().insert_conf(entry.propose_id);
-            sp.lock().remove(&entry.propose_id);
-            let _ig = ucp.lock().remove(&entry.propose_id);
+            sp.lock()
+                .remove(PoolEntry::new(entry.propose_id, conf_change.clone()));
+            ucp.lock()
+                .remove(PoolEntry::new(entry.propose_id, conf_change.clone()));
             if shutdown_self {
                 if let Some(maybe_new_leader) = curp.pick_new_leader() {
                     info!(

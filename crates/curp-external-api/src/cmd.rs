@@ -46,7 +46,13 @@ pub trait Command: pri::Serializable + ConflictCheck + PbCodec {
     /// Get keys of the command
     fn keys(&self) -> &[Self::K];
 
+    /// Returns `true` if the command is read-only
+    fn is_read_only(&self) -> bool;
+
     /// Prepare the command
+    ///
+    /// # Errors
+    /// Return `Self::Error` when `CommandExecutor::prepare` goes wrong
     #[inline]
     fn prepare<E>(&self, e: &E) -> Result<Self::PR, Self::Error>
     where
@@ -56,6 +62,9 @@ pub trait Command: pri::Serializable + ConflictCheck + PbCodec {
     }
 
     /// Execute the command according to the executor
+    ///
+    /// # Errors
+    /// Return `Self::Error` when `CommandExecutor::execute` goes wrong
     #[inline]
     async fn execute<E>(&self, e: &E) -> Result<Self::ER, Self::Error>
     where
@@ -65,6 +74,9 @@ pub trait Command: pri::Serializable + ConflictCheck + PbCodec {
     }
 
     /// Execute the command after_sync callback
+    ///
+    /// # Errors
+    /// Return `Self::Error` when `CommandExecutor::after_sync` goes wrong
     #[inline]
     async fn after_sync<E>(
         &self,
@@ -111,12 +123,21 @@ where
     C: Command,
 {
     /// Prepare the command
+    ///
+    /// # Errors
+    /// This function may return an error if there is a problem preparing the command.
     fn prepare(&self, cmd: &C) -> Result<C::PR, C::Error>;
 
     /// Execute the command
+    ///
+    /// # Errors
+    /// This function may return an error if there is a problem executing the command.
     async fn execute(&self, cmd: &C) -> Result<C::ER, C::Error>;
 
     /// Execute the after_sync callback
+    ///
+    /// # Errors
+    /// This function may return an error if there is a problem executing the after_sync callback.
     async fn after_sync(
         &self,
         cmd: &C,
@@ -125,15 +146,27 @@ where
     ) -> Result<C::ASR, C::Error>;
 
     /// Set the index of the last log entry that has been successfully applied to the command executor
+    ///
+    /// # Errors
+    /// Returns an error if setting the last applied log entry fails.
     fn set_last_applied(&self, index: LogIndex) -> Result<(), C::Error>;
 
-    /// Index of the last log entry that has been successfully applied to the command executor
+    /// Get the index of the last log entry that has been successfully applied to the command executor
+    ///
+    /// # Errors
+    /// Returns an error if retrieval of the last applied log entry fails.
     fn last_applied(&self) -> Result<LogIndex, C::Error>;
 
     /// Take a snapshot
+    ///
+    /// # Errors
+    /// This function may return an error if there is a problem taking a snapshot.
     async fn snapshot(&self) -> Result<Snapshot, C::Error>;
 
     /// Reset the command executor using the snapshot or to the initial state if None
+    ///
+    /// # Errors
+    /// This function may return an error if there is a problem resetting the command executor.
     async fn reset(&self, snapshot: Option<(Snapshot, LogIndex)>) -> Result<(), C::Error>;
 
     /// Trigger the barrier of the given trigger id (based on propose id) and log index.
